@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>使用 Kotlin 优化 Intent 数据传递</title>
+    <url>/2017/03/18/kotlin-intent-extension/</url>
+    <content><![CDATA[<blockquote>
+<p>这篇文章来源于 <a href="https://medium.com/@workingkills/you-wont-believe-this-one-weird-trick-to-handle-android-intent-extras-with-kotlin-845ecf09e0e9#.buc8y7td8" target="_blank" rel="noopener">You won't believe this one weird trick to handle Android Intent extras with Kotlin</a> ，本来准备翻译一遍，但是担心理解不够深入，索性按着自己的理解整理一遍。十分感谢 <a href="https://medium.com/@workingkills" target="_blank" rel="noopener">@Eugenio Marletti</a> 的思路。</p>
+</blockquote>
+<a id="more"></a>
+<p>首先，这篇文章可能会涉及到的知识点有：</p>
+<ul>
+<li>伴生对象</li>
+<li>对象表达式与对象声明</li>
+<li>扩展函数</li>
+<li>扩展属性</li>
+<li>高阶函数（ <code>lambda</code> 表达式）</li>
+<li>带接收者的函数字面值</li>
+<li>委托属性</li>
+</ul>
+<h1 id="Java-的实现方式">Java 的实现方式</h1>
+<p>在 Android 开发中， <code>Activity</code> 之间的数据传递是不可避免的。初次接触 Android 编程的时候，许多教程会写出这样的代码：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="comment">// 第一个 Activity</span></span><br><span class="line">Intent intent = <span class="keyword">new</span> Intent(context, AimActivity<span class="class">.<span class="keyword">class</span>)</span>;</span><br><span class="line">intent.putExtra(<span class="string">"msg"</span>, message);</span><br><span class="line">startActivity(intent);</span><br><span class="line"></span><br><span class="line"><span class="comment">// AimActivity</span></span><br><span class="line"><span class="keyword">this</span>.message = getIntent().getStringExtra(<span class="string">"msg"</span>);</span><br></pre></td></tr></table></figure>
+<p>这样写当然没有错，的确达到了传递数据的目的，但是，这却会让代码难以维护。稍微有些开发经验的，都会选择将 <code>Extra</code> 信息的键值抽出变为常量，并且把许多类似的键值放在同一个地方，避免出现键值的冲突。</p>
+<p>为了更好的可读性，还有一些人会这样去封装 <code>Intent</code> ：</p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">final</span> String MSG_KEY = <span class="string">"key for message"</span>;</span><br><span class="line"></span><br><span class="line"><span class="meta">@Nullable</span> <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> String <span class="title">getMessage</span><span class="params">(@NonNull Intent intent)</span> </span>&#123;</span><br><span class="line">  <span class="keyword">return</span> intent.getStringExtra(MSG_KEY);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">setMessage</span><span class="params">(@NonNull Intent intent, String message)</span> </span>&#123;</span><br><span class="line">  intent.putExtra(MSG_KEY, message);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这样一来，读写 <code>Intent</code> 的确如读写类成员属性一般了，可是，不得不说，这也极大地增加了代码的编写量。当然，或者可以通过注解、动态生成代码的方式来解决这一问题，但这不是本篇文章的解决方案。</p>
+<h1 id="Kotlin-的登场">Kotlin 的登场</h1>
+<p>在 Java 的实现方式中，最适合阅读、最符合面向对象思想的数据传递方式当属最后一种，那，下面就用一些 Kotlin 的特性来实现：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="keyword">object</span> IntentOptions &#123;</span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">const</span> <span class="keyword">val</span> MSG_KEY = <span class="string">"key for message"</span></span><br><span class="line"></span><br><span class="line">  <span class="function"><span class="keyword">fun</span> Intent.<span class="title">getMessage</span><span class="params">()</span></span>: String? = getStringExtra(MSG_KEY)</span><br><span class="line"></span><br><span class="line">  <span class="function"><span class="keyword">fun</span> Intent.<span class="title">setMessage</span><span class="params">(message: <span class="type">String</span>?)</span></span> &#123;</span><br><span class="line">    putExtra(MSG_KEY, message)</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 数据的存储与获取</span></span><br><span class="line">with(IntentOptions) &#123;</span><br><span class="line">  intent.setMessage(<span class="string">"message"</span>)</span><br><span class="line">  message = intent.getMessage()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以看到，利用 Kotlin 提供的扩展函数的特性，我们就可以在 <code>Intent</code> 对象上直接使用 <code>getter/setter</code> 了，这是 Java 语言做不到的。</p>
+<p>需要注意的是 <code>with</code> 表达式的使用，这涉及到 <strong>扩展函数</strong> 的作用域问题。在 Kotlin 中，扩展函数的作用范围只在其定义范围内。一般而言，我们把许多扩展函数定义在了顶级作用域中，这样在整个 App ，被扩展的对象实例都可以使用该函数。但是考虑到，我们不能在 <code>Intent</code> 对象上无限制地添加 <code>getter/setter</code> ，所以利用 <code>object</code> ，让这些扩展函数只在该对象的作用域内有效。在实际使用中，这个 <code>object</code> 可以是某个 <code>Activity</code> 的伴生对象。</p>
+<p>到这里，我们可以更进一步，使用 <strong>扩展属性</strong> ，让赋值/取值的过程更符合 Kotlin 的语言规范：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="keyword">object</span> IntentOptions &#123;</span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">const</span> <span class="keyword">val</span> MSG_KEY = <span class="string">"key for message"</span></span><br><span class="line"></span><br><span class="line">  <span class="keyword">var</span> Intent.message: String?</span><br><span class="line">  	<span class="keyword">get</span>() = getStringExtra(MSG_KEY)</span><br><span class="line">  	<span class="keyword">set</span>(message) &#123;</span><br><span class="line">      putExtra(MSG_KEY, message)</span><br><span class="line">  	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 使用</span></span><br><span class="line">with(IntentOptions) &#123;</span><br><span class="line">  intent.message = <span class="string">"message"</span></span><br><span class="line">  message = intent.message</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>嗯，不论写那个 <code>object</code> 的过程怎样，至少，在使用这样的 <code>Intent</code> 方面，体验到了读写原生对象的便利啊。</p>
+<h1 id="Kotlin-中的委托">Kotlin 中的委托</h1>
+<p>委托？为什么要用委托？上面的代码我们使用委托的模式改写一下：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">IntentExtraStringDelegate</span></span>(<span class="keyword">val</span> key: String) &#123;</span><br><span class="line">  <span class="function"><span class="keyword">fun</span> <span class="title">getValue</span><span class="params">(intent: <span class="type">Intent</span>)</span></span>: String? =</span><br><span class="line">  	intent.getStringExtra(name)</span><br><span class="line"></span><br><span class="line">  <span class="function"><span class="keyword">fun</span> <span class="title">setValue</span><span class="params">(intent: <span class="type">Intent</span>, value: <span class="type">String</span>?)</span></span> &#123;</span><br><span class="line">    intent.putExtra(name, value)</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">object</span> IntentOptions &#123;</span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">val</span> messageDelegate = IntentExtraStringDelegate(<span class="string">"key for message"</span>)</span><br><span class="line"></span><br><span class="line">  <span class="keyword">var</span> Intent.message: String?</span><br><span class="line">  	<span class="keyword">get</span>() = messageDelegate.getValue(<span class="keyword">this</span>)</span><br><span class="line">  	<span class="keyword">set</span>(message) = messageDelegate.setValue(<span class="keyword">this</span>, message)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以看到，委托就是把 <code>Intent</code> 内容的读写操作抽取出来，以便复用。进行了这样的抽取之后，我们又可以在 Kotlin 的语言特性中找到这样的实现：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">IntentExtraString</span></span>(<span class="keyword">private</span> <span class="keyword">val</span> key: String) &#123;</span><br><span class="line">  <span class="keyword">operator</span> <span class="function"><span class="keyword">fun</span> <span class="title">getValue</span><span class="params">(intent: <span class="type">Intent</span>, property: <span class="type">KProperty</span>&lt;*&gt;)</span></span>: String? =</span><br><span class="line">  	intent.getStringExtra(key)</span><br><span class="line"></span><br><span class="line">  <span class="keyword">operator</span> <span class="function"><span class="keyword">fun</span> <span class="title">setValue</span><span class="params">(intent: <span class="type">Intent</span>, property: <span class="type">KProperty</span>&lt;*&gt;, value: <span class="type">String</span>?)</span></span> &#123;</span><br><span class="line">    intent.putExtra(key, value)</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 使用</span></span><br><span class="line"><span class="keyword">object</span> IntentOptions &#123;</span><br><span class="line">  <span class="keyword">var</span> Intent.message <span class="keyword">by</span> IntentExtraString(<span class="string">"key for message"</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>啊哈，这样一来，相当于仅仅是对 <code>Intent</code> 内的变量进行了一下声明，就可以在对应的范围内使用了！而存储的键值，也完全可以省略，直接使用字段名：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">IntentExtraString</span></span>(<span class="keyword">private</span> <span class="keyword">val</span> key: String? = <span class="literal">null</span>) &#123;</span><br><span class="line">  <span class="keyword">private</span> <span class="keyword">val</span> KProperty&lt;*&gt;.extraName: String</span><br><span class="line">  	<span class="keyword">get</span>() = <span class="keyword">this</span><span class="symbol">@IntentExtraString</span>.key ?: name</span><br><span class="line"></span><br><span class="line">  <span class="keyword">operator</span> <span class="function"><span class="keyword">fun</span> <span class="title">getValue</span><span class="params">(intent: <span class="type">Intent</span>, property: <span class="type">KProperty</span>&lt;*&gt;)</span></span>: String? =</span><br><span class="line">  	intent.getStringExtra(property.extraName)</span><br><span class="line"></span><br><span class="line">  <span class="keyword">operator</span> <span class="function"><span class="keyword">fun</span> <span class="title">setValue</span><span class="params">(intent: <span class="type">Intent</span>, property: <span class="type">KProperty</span>&lt;*&gt;, value: <span class="type">String</span>?)</span></span> &#123;</span><br><span class="line">    intent.putExtra(property.extraName, value)</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>一般而言，在 <code>Activity</code> 可以这样使用：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="class"><span class="keyword">class</span> <span class="title">Activity</span> : <span class="type">AppCompatActivity</span></span>() &#123;</span><br><span class="line">  <span class="keyword">companion</span> <span class="keyword">object</span> IntentOptions &#123;</span><br><span class="line">    <span class="keyword">var</span> Intent.id <span class="keyword">by</span> IntentExtraString()</span><br><span class="line">    <span class="keyword">var</span> Intent.name <span class="keyword">by</span> IntentExtraString()</span><br><span class="line">    <span class="keyword">var</span> Intent.message <span class="keyword">by</span> IntentExtraString()</span><br><span class="line">  &#125;</span><br><span class="line"></span><br><span class="line">  <span class="function"><span class="keyword">fun</span> <span class="title">test</span><span class="params">(intent: <span class="type">Intent</span>)</span></span> &#123;</span><br><span class="line">    intent.id = <span class="string">"1"</span></span><br><span class="line">    intent.name = <span class="string">"pass"</span></span><br><span class="line">    intent.message = <span class="string">"message"</span></span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">fun</span> <span class="title">testOutSide</span><span class="params">(intent: <span class="type">Intent</span>)</span></span> = with(Activity.IntentOptions) &#123;</span><br><span class="line">  <span class="keyword">val</span> id = intent.id</span><br><span class="line">  <span class="keyword">val</span> name = intent.name</span><br><span class="line">  <span class="keyword">val</span> message = intent.message</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>以上，就是使用 Kotlin 优化 <code>Intent</code> 数据传输的基本思路。当然，在这个思路下，还有许多可以封装的，比如，自定义类型数据的传输——可以去看一看原作者的开源库 <a href="https://github.com/Takhion/android-extras-delegates" target="_blank" rel="noopener"><strong>android-extras-delegates</strong></a> 。</p>
+]]></content>
+      <categories>
+        <category>技术</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+        <tag>Kotlin</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>丽月末的遐想</title>
+    <url>/2018/02/28/thought-180228/</url>
+    <content><![CDATA[<p>早间，天幕沉沉，细雨零星。</p>
+<p>小步走在人行道上，目光落于眼前身旁的枯瘦树枝，又被那纵横交错、远近高低的光影打在眼球，不禁有些恍惚。<a id="more"></a>我原是想要学习绘画的，无奈总是困于线条与线条的交错组合。就比如这树枝，它从枝干延展开来，自由轨迹，忽而上下，很是自然；可从我笔下跳出，却左右失据，调皮得紧。</p>
+<p>我很是不服气啊，从我学的知识来讲，你也不过是一个一个的细胞拼接起来，而我的笔迹也由一粒粒墨水排列而来，二者为何有差距？</p>
+<p>突然联想到人与万物。</p>
+<p>我在此地思考，是因为有一个我们定义为“意识”的东西存在，但科学至今无法在人类的大脑中找到与其对应的实体。那以现在的知识框架而言，我的大脑也不过是细胞的排列组合罢了，又何德何能生出这品评世间的“意识”来？再从细划分，无论这植物的细胞、人的细胞、书本上的笔墨，乃至这充盈宇宙的空间时间，也可能是同样的能量弦组合而来，中间或有玄妙，却仍生出这变化万千。</p>
+<p>再从细微处走来：就人类感官而言、可能并非实体的“弦”的组合，竟生出“粒子”这样占据空间、流过时间的事物；粒子的运动、叠加，又让现实中的人们得以感受颜色、温度的存在；音符的组合伴以时间的佐料，能谱出悦人的旋律……</p>
+<p>组合，原来并非简单就是单一的事物积少成多，许多并不存在的概念也将相伴而生。如此思索来看，人之“意识”大概也是某个事物在聚集的过程中衍生而来的概念？以这观点来看，更加庞大的元素能否也产生类似的转变，从而生出“意识”来？</p>
+<p>突然感觉一切都是那么巧合，这花花绿绿仿佛皆为吾之意识而来。不，错了，好像是，我的意识为了感受这间方寸，才诞生得如此模样。那么，是不是还有许多花叶菩提，是我这“意识”无处观得的？理论来说应当如是。</p>
+<p>思绪忽的混乱，不念，不想。</p>
+]]></content>
+      <categories>
+        <category>随笔</category>
+      </categories>
+      <tags>
+        <tag>随笔</tag>
+        <tag>意识</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Kotlin 协程使用手册</title>
+    <url>/2018/02/22/kotlinx-coroutines-intro/</url>
+    <content><![CDATA[<p>最近抽出闲暇，把 <a href="https://github.com/Kotlin/kotlinx.coroutines" target="_blank" rel="noopener">kotlinx.coroutines</a> 官方的三份入手指南翻译了一下，挂在了 GitBook ，可以直接去<a href="https://www.gitbook.com/book/saplf/kotlinx-coroutines/details" target="_blank" rel="noopener">这里</a>查看。不过，文档的内容其实还是比较多的，为了厘清协程的特殊之处，下面我就总结一番。<a id="more"></a></p>
+<h1 id="协程是什么">协程是什么</h1>
+<p>协程的定义其实不太好描述，那我干脆由用途及定义，简述一下协程。</p>
+<h2 id="轻量级的线程">轻量级的线程</h2>
+<p>标题的说法可能不太准确，但也能一窥其功用。协程是工作在线程之上的。我们知道线程是由系统（语言系统或者操作系统）进行调度的，切换时有着一定的开销。而协程，它的切换由程序自己来控制，无论是 CPU 的消耗还是内存的消耗都大大降低。</p>
+<p>从这一点出发，它的应用场景可能就在于提高硬件性能的瓶颈。譬如说，你启动十万个协程不会有什么问题，但你启动十万个线程试试？</p>
+<h2 id="可暂停的程序">可暂停的程序</h2>
+<p>相较于第一点，这才是协程的本质；同时也是由这一点，协程发挥了很大的作用。在协程中，某段代码可以暂停，转而去执行另外的协程代码；被暂停的代码也可以在你的控制下随时恢复运行。</p>
+<p>这在前端编程中有一个很大的用处——避免回调地狱。就 Android 编程而言，在 Rx 之前，要获取某个异步操作的返回结果，标准做法就是定义接口，用回调来接收结果。而 Rx 出现之后，以其巧妙的转换，通过响应式的代码，以一层的回调（辅以 lambda 表达式，看起来就像没有回调一样）链解决了回调地狱的问题。但在这里，习惯以命令式写法写代码的同学就需要稍稍理解一些函数式的编程思维了。协程不一样，它的代码是可以暂停的！也就是说，在我通过 <code>getUser()</code> 方法异步获取数据的时候，调用它的代码块就可以选择挂起，等到获取到数据，再恢复运行。代码看起来就这样：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="keyword">val</span> user = getUser() <span class="comment">// 这儿的 getUser 就是 suspend function</span></span><br></pre></td></tr></table></figure>
+<p>是不是和同步代码看起来一样？</p>
+<p>写过 JS 的同学可能就觉着很眼熟了：</p>
+<figure class="highlight javascript"><table><tr><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="function"><span class="keyword">function</span> <span class="title">getUser</span>(<span class="params"></span>) </span>&#123;</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="keyword">const</span> response = <span class="keyword">await</span> fetchUser();</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">    &#125; <span class="keyword">catch</span> (e) &#123;</span><br><span class="line">        <span class="comment">// error handle</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>没错，通过协程，Kotlin 是可以写出类似代码来的！</p>
+<h1 id="协程的使用">协程的使用</h1>
+<h2 id="协程的骨架">协程的骨架</h2>
+<p>首先，需要通过构造器来启动协程。官方目前提供的<strong>基础</strong>构造器有两个：</p>
+<ul>
+<li><code>launch</code></li>
+<li><code>runBlocking</code></li>
+</ul>
+<p>它们都会启动一个协程，区别在于前者不会阻塞当前线程，并且会返回一个协程的引用，而后者会等待协程的代码执行结束，再执行剩下的代码。</p>
+<p>其次，关于协程，Kotlin 新增了一个关键字：<code>suspend</code> ，被该关键字修饰的<strong>函数/方法/代码块</strong>只能由协程代码（也就是上述构造器的代码块参数内部）或者被 <code>suspend</code> 修饰的<strong>函数/方法/代码块</strong>调用。说简单一点，<code>suspend fun</code> 只能被 <code>suspend fun</code> 调用（协程构造器的最后一个参数的类型声明就是 <code>suspend CoroutineScope.() -&gt; Unit</code>）。</p>
+<p>知道了这两点，就可以写出最简单的协程代码：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fun</span> <span class="title">main</span><span class="params">(args: <span class="type">Array</span>&lt;<span class="type">String</span>&gt;)</span></span> &#123;</span><br><span class="line">    repeat(<span class="number">100_000</span>) &#123; <span class="comment">// 启动十万个协程试试</span></span><br><span class="line">        launch &#123; suspendPrint() &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    Thread.sleep(<span class="number">1200</span>) <span class="comment">// 等待协程代码的结束</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">suspend</span> <span class="function"><span class="keyword">fun</span> <span class="title">suspendPrint</span><span class="params">()</span></span> &#123;</span><br><span class="line">    delay(<span class="number">1000</span>)</span><br><span class="line">    println(<span class="string">"."</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>其中的 <code>delay</code> 就是一个 <code>suspend fun</code>。</p>
+<p>除了以上两点，另一个很重要的概念就是<strong>上下文</strong>（<code>context</code>）。协程虽然是依赖于线程的，但一个协程并非就绑死在一个线程上。启动协程的时候可以指定上下文，在协程内部也可以通过 <code>withContext</code> 切换上下文。而这个上下文，也就是一个 <code>CoroutineDispatcher</code> 类的对象，从名字可以看出，就是由它去进行协程调度。比如，如果你需要新建一个线程去跑协程的代码，可以这样：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line">launch(context = newSingleThreadContext(<span class="string">"new-thread"</span>)) &#123; delay(<span class="number">1000</span>) &#125;</span><br></pre></td></tr></table></figure>
+<p>以上三点是我个人认为重要的内容，当然还有协程的取消、协程的生命周期、协程与子协程的关系等等，这些要点可以去官方文档或者我的翻译查看，内容写得很棒。</p>
+<h2 id="常规操作">常规操作</h2>
+<h3 id="async-与-await">async 与 await</h3>
+<p>就我个人所知，<code>async</code> 与 <code>await</code> 作为 JS 与 C# 的两个关键字，精简了异步操作（当然，这两门语言的细节并不一样）。但是在 Kotlin 中，async 其实是一个普通的函数：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fun</span> <span class="title">main</span><span class="params">(args: <span class="type">Array</span>&lt;<span class="type">String</span>&gt;)</span></span> = runBlocking&lt;<span class="built_in">Unit</span>&gt; &#123;</span><br><span class="line">    <span class="keyword">val</span> result: Deferred&lt;String&gt; = async &#123; doSomethingTimeout() &#125;</span><br><span class="line">  println(<span class="string">"I will got the result <span class="subst">$&#123;result.await()&#125;</span>"</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">suspend</span> <span class="function"><span class="keyword">fun</span> <span class="title">doSomethingTimeout</span><span class="params">()</span></span>: String &#123;</span><br><span class="line">    delay(<span class="number">1000</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="string">"Result"</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在这里， <code>async</code> 代码块会新启动一个协程后立即执行，并且返回一个 <code>Deferred</code> 类型的值，调用它的 <code>await</code> 方法后会暂停当前协程，直到获取到 <code>async</code> 代码块执行结果，当前协程才会继续执行。</p>
+<p>其实谈到这个，就不得不提一下 <a href="https://github.com/square/retrofit" target="_blank" rel="noopener">Retrofit</a> 了，作为 RESTful 架构的优秀解决方案，有人已经为其适配了协程版的 adapter 了。我知道的有两个：</p>
+<ul>
+<li><a href="https://github.com/gildor/kotlin-coroutines-retrofit" target="_blank" rel="noopener">Kotlin Coroutines for Retrofit</a> 提供的功能丰富，有异常处理方案，文档也很完善；</li>
+<li><a href="https://github.com/JakeWharton/retrofit2-kotlin-coroutines-adapter" target="_blank" rel="noopener">Kotlin Coroutine (Experimental) Adapter</a> <a href="https://github.com/JakeWharton" target="_blank" rel="noopener">Jake Wharton</a> 写的。</li>
+</ul>
+<p>其实前者并不是 Retrofit 的 Adapter，<a href="https://github.com/gildor" target="_blank" rel="noopener">Andrey Mischenko</a> 只是为 <code>Call</code> 类添加了扩展函数而已。但是它们都是使用 <code>Deferred</code> 对象来处理结果。</p>
+<h3 id="channel-相关">channel 相关</h3>
+<p>这儿有个 channel 的概念，顾名思义，它的作用就在于收发事件。调用它的 <code>send</code> 与 <code>receive</code> 方法，就是最简单的使用了。不过要注意，这两个方法会互相等待，所以它们肯定得运行在不同的协程。</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fun</span> <span class="title">main</span><span class="params">(args: <span class="type">Array</span>&lt;<span class="type">String</span>&gt;)</span></span> = runBlocking&lt;<span class="built_in">Unit</span>&gt; &#123;</span><br><span class="line">    <span class="keyword">val</span> channel = Channel()</span><br><span class="line">    launch &#123;</span><br><span class="line">        <span class="keyword">for</span> (x <span class="keyword">in</span> <span class="number">1</span>..<span class="number">5</span>) channel.send(x)</span><br><span class="line">        channel.close()</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">for</span> (x <span class="keyword">in</span> <span class="number">1</span>..<span class="number">5</span>) println(channel.receive())</span><br><span class="line">    <span class="comment">//  or `for (x in channel) println(x)`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>如上所示，channel 其实本身就可以迭代，迭代的结束条件就是 <code>channel.close()</code> 。</p>
+<h3 id="一个自定义的-onClick-方法">一个自定义的 <code>onClick</code> 方法</h3>
+<p>官方文档提供了一个 channel 版的 <code>onClick</code> 方法的实现，我觉得比较好用：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fun</span> View.<span class="title">onClick</span><span class="params">(action: <span class="type">suspend</span> (<span class="type">View</span>) -&gt; <span class="type">Unit</span>)</span></span> &#123;</span><br><span class="line">    <span class="keyword">val</span> eventActor = actor&lt;View&gt;(UI) &#123;</span><br><span class="line">        <span class="keyword">for</span> (event <span class="keyword">in</span> channel) action(event)</span><br><span class="line">    &#125;</span><br><span class="line">    setOnClickListener &#123;</span><br><span class="line">        eventActor.offer(it)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>actor</code> 内部有一个 channel 用于接收外部的数据，点击事件产生的时候，通过 <code>actor</code> 向其发送数据，channel 迭代就会向前移动，调用传入的 <code>action</code> 。这里还可以通过参数处理背压的问题。</p>
+<p>从这个应用可以延展开来，凡是由事件触发的操作，都可以用类似的思路来实现。当然，无论实现方式的好与坏。</p>
+<h3 id="自定义-Rx-操作符">自定义 Rx 操作符</h3>
+<p>截至目前来看，协程与 Rx 似乎不能共存，它们的功用大多重复，导致许多场景非此即彼。不过通过官方的第三份手册，我才发现协程还专门为 Rx 写了一个模块，让我们能够以协程的方式写 Rx 代码。需要介绍的是 <a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-reactive/kotlinx.coroutines.experimental.reactive/publish.html" target="_blank" rel="noopener"><code>publish</code></a> 函数，他就是两者的桥梁：</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">fun</span> <span class="title">range</span><span class="params">(context: <span class="type">CoroutineContext</span>, start: <span class="type">Int</span>, count: <span class="type">Int</span>)</span></span>: Publisher&lt;<span class="built_in">Int</span>&gt; = </span><br><span class="line">  publish&lt;<span class="built_in">Int</span>&gt;(context) &#123;</span><br><span class="line">    <span class="keyword">for</span> (x <span class="keyword">in</span> start until start + count) send(x)</span><br><span class="line">  &#125;</span><br></pre></td></tr></table></figure>
+<p><code>publish</code> 内部可以用 channel 的方式去组织代码，通过 <code>send</code> 方法将数据流向下一级，它返回的 <code>Publisher</code> 就是 Rx 标准中的那个，可以通过扩展方法 <code>consumeEach</code> 来接收每一项数据。</p>
+<figure class="highlight kotlin"><table><tr><td class="code"><pre><span class="line">range(CommonPool, <span class="number">1</span>, <span class="number">5</span>).consumeEach &#123; println(it) &#125;</span><br></pre></td></tr></table></figure>
+<h1 id="最后">最后</h1>
+<p>前后几天时间，翻译了三篇指南，切身体会到看一遍与写一遍的差距。这篇文章旨在罗列要点，许多细节并未说明，更详尽的内容还是需要文档。当然，也可以加入 <a href="https://kotlinlang.slack.com/" target="_blank" rel="noopener">kotlinlang</a> 的 <a href="https://kotlinlang.slack.com/messages/C1CFAFJSK" target="_blank" rel="noopener">coroutine channel</a> 参与讨论。</p>
+]]></content>
+      <categories>
+        <category>翻译</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+        <tag>Kotlin</tag>
+        <tag>协程</tag>
+      </tags>
+  </entry>
+</search>
